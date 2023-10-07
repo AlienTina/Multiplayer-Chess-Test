@@ -5,12 +5,34 @@ using System.Collections.Generic;
 using System;
 using System.Diagnostics;
 
+using WebSocketSharp;
+using WebSocketSharp.Server;
+using System.Reflection.Emit;
+using Microsoft.VisualBasic;
+using System.Windows.Forms;
+using Label = System.Windows.Forms.Label;
+using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
+using System.IO;
+using System.Net;
+using Microsoft.Xna.Framework.Audio;
+
 namespace chess
 {
+	
 	public enum PieceColor
 	{
 		white = 0,
 		black
+	}
+
+	public enum GameState
+	{
+		menu = 0,
+		playing,
+		waitingForMatch,
+		playingMultiplayer,
+		end
 	}
 
 	public class Move
@@ -325,22 +347,51 @@ namespace chess
 					{
 						Move move = new Move(position + new Vector2(2, 0), board, color);
 						move.isCastle = 1;
-						if(board.GetPiece(position + new Vector2(1, 0)) == null)
-							moves.Add(move);
+						if (board.GetPiece(position + new Vector2(1, 0)) == null)
+						{
+							if (!board.whiteSide)
+							{
+								if (board.GetPiece(position + new Vector2(3, 0)) == null) moves.Add(move);
+							}
+							else moves.Add(move);
+						}
 						move = new Move(position + new Vector2(-2, 0), board, color);
 						move.isCastle = -1;
-						if (board.GetPiece(position + new Vector2(-1, 0)) == null && board.GetPiece(position + new Vector2(-3, 0)) == null)
-							moves.Add(move);
+						if (board.GetPiece(position + new Vector2(-1, 0)) == null)
+						{
+							if (board.whiteSide)
+							{
+								if(board.GetPiece(position + new Vector2(-3, 0)) == null) moves.Add(move);
+							}
+							else moves.Add(move);
+						}
 					}
 					break;
 			}
 			return moves;
 		}
-
-		public void Move(Vector2 newPosition)
+		public void Move(Vector2 newPosition, MultiplayerManager manager, Game1 game)
 		{
+			if (manager != null && manager.secondPlayer.IsAlive)
+			{
+				string message = $"{7 - position.X},{7 - position.Y} {7 - newPosition.X},{7 - newPosition.Y}";
+				manager.secondPlayer.Send(message);
+			}
 			position = newPosition;
+			int direction = color == PieceColor.white ? -1 : 1;
+			if (type == "Pawn")
+			{
+				if (color == PieceColor.white)
+				{
+					if (newPosition.Y == 0) type = "Queen";
+				}
+				if (color == PieceColor.black)
+				{
+					if (newPosition.Y == 7) type = "Queen";
+				}
+			}
 			if (!hasMoved) hasMoved = true;
+			game.moveSound.Play();
 		}
 	}
 
@@ -352,8 +403,11 @@ namespace chess
 		Texture2D darkTile;
 		public List<Piece> whitePieces = new List<Piece>(16);
 		public List<Piece> blackPieces = new List<Piece>(16);
-		public Board(Game1 game)
+
+		public bool whiteSide {  get; set; }
+		public Board(Game1 game, bool whiteSide)
 		{
+			this.whiteSide = whiteSide;
 			#region textureLoading
 			whitePieceTextures["Bishop"] = game.Content.Load<Texture2D>("Pieces/White/Cropped/Bishop");
 			whitePieceTextures["King"] = game.Content.Load<Texture2D>("Pieces/White/Cropped/King");
@@ -376,9 +430,18 @@ namespace chess
 			blackPieces.Add(new Piece("Rook", new Vector2(0, 0), PieceColor.black));
 			blackPieces.Add(new Piece("Knight", new Vector2(1, 0), PieceColor.black));
 			blackPieces.Add(new Piece("Bishop", new Vector2(2, 0), PieceColor.black));
-			blackPieces.Add(new Piece("Queen", new Vector2(3, 0), PieceColor.black));
-			blackPieces.Add(new Piece("King", new Vector2(4, 0), PieceColor.black));
+			if (whiteSide)
+			{
+				blackPieces.Add(new Piece("Queen", new Vector2(3, 0), PieceColor.black));
+				blackPieces.Add(new Piece("King", new Vector2(4, 0), PieceColor.black));
+			}
+			else 
+			{
+				blackPieces.Add(new Piece("Queen", new Vector2(4, 0), PieceColor.black));
+				blackPieces.Add(new Piece("King", new Vector2(3, 0), PieceColor.black));
+			}
 			blackPieces.Add(new Piece("Bishop", new Vector2(5, 0), PieceColor.black));
+
 			blackPieces.Add(new Piece("Knight", new Vector2(6, 0), PieceColor.black));
 			blackPieces.Add(new Piece("Rook", new Vector2(7, 0), PieceColor.black));
 
@@ -405,14 +468,24 @@ namespace chess
 			whitePieces.Add(new Piece("Rook", new Vector2(0, 7), PieceColor.white));
 			whitePieces.Add(new Piece("Knight", new Vector2(1, 7), PieceColor.white));
 			whitePieces.Add(new Piece("Bishop", new Vector2(2, 7), PieceColor.white));
-			whitePieces.Add(new Piece("Queen", new Vector2(3, 7), PieceColor.white));
-			whitePieces.Add(new Piece("King", new Vector2(4, 7), PieceColor.white));
+			if (whiteSide)
+			{
+				whitePieces.Add(new Piece("Queen", new Vector2(3, 7), PieceColor.white));
+				whitePieces.Add(new Piece("King", new Vector2(4, 7), PieceColor.white));
+			}
+			else
+			{
+				whitePieces.Add(new Piece("Queen", new Vector2(4, 7), PieceColor.white));
+				whitePieces.Add(new Piece("King", new Vector2(3, 7), PieceColor.white));
+			}
 			whitePieces.Add(new Piece("Bishop", new Vector2(5, 7), PieceColor.white));
 			whitePieces.Add(new Piece("Knight", new Vector2(6, 7), PieceColor.white));
 			whitePieces.Add(new Piece("Rook", new Vector2(7, 7), PieceColor.white));
 			#endregion
 
-			//blackPieces.Add(new Piece("King", new Vector2(1, 3), PieceColor.black));
+
+			/*blackPieces.Add(new Piece("King", new Vector2(2, 4), PieceColor.black));
+			whitePieces.Add(new Piece("King", new Vector2(2, 4), PieceColor.white));*/
 		}
 
 		public void Draw(Game1 game, GameTime gameTime, SpriteBatch _spriteBatch, List<Move> tileHighlight)
@@ -441,14 +514,15 @@ namespace chess
 			_spriteBatch.End();
 			#endregion
 			#region pieceRender
-			_spriteBatch.Begin(SpriteSortMode.Deferred, null, null, null, null, null, game.pieceTransform);
-			foreach (Piece piece in whitePieces)
-			{
-				_spriteBatch.Draw(whitePieceTextures[piece.type], piece.position * game.tileSize, Color.White);
-			}
+			_spriteBatch.Begin(SpriteSortMode.FrontToBack, null, null, null, null, null, game.pieceTransform);
 			foreach (Piece piece in blackPieces)
 			{
-				_spriteBatch.Draw(blackPieceTextures[piece.type], piece.position * game.tileSize, Color.White);
+				_spriteBatch.Draw(blackPieceTextures[piece.type], piece.position * game.tileSize, null, Color.White, 0, Vector2.Zero, 1, SpriteEffects.None, piece.position.Y / 7.0f);
+			}
+			foreach (Piece piece in whitePieces)
+			{
+				_spriteBatch.Draw(whitePieceTextures[piece.type], piece.position * game.tileSize, null, Color.White, 0, Vector2.Zero, 1, SpriteEffects.None, piece.position.Y / 7.0f);
+
 			}
 			_spriteBatch.End();
 			#endregion
@@ -466,6 +540,134 @@ namespace chess
 			}
 			return null;
 		}
+		public Piece GetPiece(Vector2 position, PieceColor color)
+		{
+			if (color == PieceColor.white)
+			{
+				foreach (Piece piece in whitePieces)
+				{
+					if (piece.position == position) return piece;
+				}
+			}
+			if (color == PieceColor.black)
+			{
+				foreach (Piece piece in blackPieces)
+				{
+					if (piece.position == position) return piece;
+				}
+			}
+			return null;
+		}
+	}
+	public class Match : WebSocketBehavior
+	{
+		private Game1 _instance;
+		private MultiplayerManager manager;
+		public Match(Game1 gameInstance, MultiplayerManager manager)
+		{
+			_instance = gameInstance;
+			this.manager = manager;
+		}
+
+		protected override void OnOpen()
+		{
+			manager.secondPlayer = Context.WebSocket;
+			_instance.turn = PieceColor.white;
+			_instance.board = new Board(_instance, true);
+			_instance.state = GameState.playingMultiplayer;
+			base.OnOpen();
+		}
+
+		protected override void OnMessage(MessageEventArgs e)
+		{
+			if (e.Data == "gg")
+			{
+				_instance.endScreenText = "You Lose!";
+				_instance.state = GameState.end;
+				manager.secondPlayer.Close();
+				return;
+			}
+			Vector2 piece;
+			Vector2 move;
+			string pieceData = e.Data.Split(' ')[0];
+			string moveData = e.Data.Split(' ')[1];
+			piece = new Vector2((float)Convert.ToDouble(pieceData.Split(',')[0]), (float)Convert.ToDouble(pieceData.Split(',')[1]));
+			move = new Vector2((float)Convert.ToDouble(moveData.Split(',')[0]), (float)Convert.ToDouble(moveData.Split(',')[1]));
+
+			Debug.WriteLine($"piece: {piece}, move {move}");
+			if (_instance.board.GetPiece(move, PieceColor.white) != null) _instance.board.whitePieces.Remove(_instance.board.GetPiece(move, PieceColor.white));
+			_instance.board.GetPiece(piece, PieceColor.black).Move(move, null, _instance);
+			_instance.turn = PieceColor.white;
+			base.OnMessage(e);
+		}
+
+		protected override void OnClose(CloseEventArgs e)
+		{
+			if (_instance.state != GameState.end)
+				_instance.state = GameState.menu;
+			Debug.WriteLine("Lost Connection.");
+			base.OnClose(e);
+		}
+	}
+	public class MultiplayerManager
+	{
+		public WebSocket secondPlayer { get; set; }
+		public WebSocketServer me { get; set; }
+		public bool isHost { get; set; }
+		public Game1 game;
+		public MultiplayerManager(bool isHost, Game1 game, string ip)
+		{
+			this.isHost = isHost;
+			this.game = game;
+			if (!isHost)
+			{
+				secondPlayer = new WebSocket($"ws://{ip}:12345/match");
+				secondPlayer.OnMessage += OnMessage;
+				secondPlayer.OnOpen += game.OnOpen;
+				secondPlayer.OnClose += OnClose;
+				secondPlayer.Connect();
+				
+			}
+			else
+			{
+
+				me = new WebSocketServer($"ws://0.0.0.0:12345");
+
+				me.AddWebSocketService<Match>("/match", () => new Match(game, this));
+
+				me.Start();
+			}
+		}
+
+		private void OnClose(object sender, CloseEventArgs e)
+		{
+			Debug.WriteLine("Lost Connection.");
+			if(game.state != GameState.end)
+				game.state = GameState.menu;
+		}
+
+		private void OnMessage(object sender, MessageEventArgs e)
+		{
+			if(e.Data == "gg")
+			{
+				game.endScreenText = "You Lose!";
+				game.state = GameState.end;
+				secondPlayer.Close();
+			}
+			Vector2 piece;
+			Vector2 move;
+			string pieceData = e.Data.Split(' ')[0];
+			string moveData = e.Data.Split(' ')[1];
+			piece = new Vector2((float)Convert.ToDouble(pieceData.Split(',')[0]), (float)Convert.ToDouble(pieceData.Split(',')[1]));
+			move = new Vector2((float)Convert.ToDouble(moveData.Split(',')[0]), (float)Convert.ToDouble(moveData.Split(',')[1]));
+
+			Debug.WriteLine($"piece: {piece}, move {move}");
+			if (game.board.GetPiece(move, PieceColor.white) != null) game.board.whitePieces.Remove(game.board.GetPiece(move, PieceColor.white));
+			game.board.GetPiece(piece, PieceColor.black).Move(move, null, game);
+			game.turn = PieceColor.white;
+		}
+
+		
 	}
 
 	public partial class Game1 : Game
@@ -476,7 +678,7 @@ namespace chess
 		public int tileSize = 64;
 		public int boardSize = 512;
 
-		Board board;
+		public Board board;
 
 		public Matrix boardTransform;
 		public Matrix pieceTransform;
@@ -484,7 +686,49 @@ namespace chess
 		List<Move> tileHighlight = new List<Move>();
 		int selectedPiece = -1;
 
-		PieceColor turn = PieceColor.white;
+		public PieceColor turn = PieceColor.white;
+
+		public GameState state = GameState.menu;
+
+		Texture2D menuTexture;
+
+		MultiplayerManager multiplayer;
+
+		public SoundEffect moveSound;
+
+		public static string ShowDialog(string text, string caption)
+		{
+			Form prompt = new Form()
+			{
+				Width = 500,
+				Height = 150,
+				FormBorderStyle = FormBorderStyle.FixedDialog,
+				Text = caption,
+				StartPosition = FormStartPosition.CenterScreen
+			};
+			Label textLabel = new Label() { Left = 50, Top = 20, Text = text };
+			TextBox textBox = new TextBox() { Left = 50, Top = 50, Width = 400 };
+			Button confirmation = new Button() { Text = "Ok", Left = 350, Width = 100, Top = 70, DialogResult = DialogResult.OK };
+			confirmation.Click += (sender, e) => { prompt.Close(); };
+			prompt.Controls.Add(textBox);
+			prompt.Controls.Add(confirmation);
+			prompt.Controls.Add(textLabel);
+			prompt.AcceptButton = confirmation;
+
+			return prompt.ShowDialog() == DialogResult.OK ? textBox.Text : "";
+		}
+
+		SpriteFont font;
+
+		public string endScreenText = "";
+
+		public void OnOpen(object sender, EventArgs e)
+		{
+			turn = PieceColor.black;
+			board = new Board(this, false);
+			state = GameState.playingMultiplayer;
+			Debug.WriteLine("Connected.");
+		}
 		public Game1()
 		{
 			_graphics = new GraphicsDeviceManager(this);
@@ -501,13 +745,17 @@ namespace chess
 		protected override void Initialize()
 		{
 			// TODO: Add your initialization logic here
-			board = new Board(this);
+			
 			base.Initialize();
 		}
 
 		protected override void LoadContent()
 		{
 			_spriteBatch = new SpriteBatch(GraphicsDevice);
+
+			menuTexture = Content.Load<Texture2D>("Placeholders/menu");
+			font = Content.Load<SpriteFont>("defaultfont");
+			moveSound = Content.Load<SoundEffect>("move");
 
 			// TODO: use this.Content to load your game content here
 		}
@@ -517,87 +765,176 @@ namespace chess
 			if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
 				Exit();
 
-			if (Mouse.GetState().LeftButton == ButtonState.Pressed)
+			if (state == GameState.playing || state == GameState.playingMultiplayer)
 			{
-
-				Vector2 gridPosition = new Vector2((int)(Mouse.GetState().X / tileSize), (int)((Mouse.GetState().Y - tileSize) / tileSize));
-
-				//Debug.WriteLine(gridPosition);
-
-				Piece pieceAtMouse = board.GetPiece(gridPosition);
-
-
-				if (pieceAtMouse != null && pieceAtMouse.color == turn)
+				if (Mouse.GetState().LeftButton == ButtonState.Pressed)
 				{
-					tileHighlight = pieceAtMouse.GetMoves(board);
-					if (pieceAtMouse.color == turn)
-					{
-						if (turn == PieceColor.white)
-							selectedPiece = board.whitePieces.IndexOf(pieceAtMouse);
-						else
-							selectedPiece = board.blackPieces.IndexOf(pieceAtMouse);
-						Debug.WriteLine(pieceAtMouse.type);
-					}
-					else selectedPiece = -1;
-				}
-				else
-				{
-					Debug.WriteLine("Moving");
 
-					Debug.WriteLine(selectedPiece);
-					if (selectedPiece != -1)
-					{
+					Vector2 gridPosition = new Vector2((int)(Mouse.GetState().X / tileSize), (int)((Mouse.GetState().Y - tileSize) / tileSize));
 
-						foreach (Move move in tileHighlight)
+					//Debug.WriteLine(gridPosition);
+
+					Piece pieceAtMouse = board.GetPiece(gridPosition, turn);
+
+
+					if (pieceAtMouse != null && pieceAtMouse.color == turn)
+					{
+						tileHighlight = pieceAtMouse.GetMoves(board);
+						if (pieceAtMouse.color == turn)
 						{
-							if (move.position == gridPosition)
-							{
-
-								if (turn == PieceColor.white)
-								{
-									if (move.isCapture) board.blackPieces.Remove(board.GetPiece(gridPosition));
-									board.whitePieces[selectedPiece].Move(move.position);
-									if (move.isCastle != 0)
-									{
-										if(move.isCastle == 1)
-										{
-											Piece rook = board.GetPiece(new Vector2(7, 7));
-											rook.Move(board.whitePieces[selectedPiece].position - (Vector2.UnitX * move.isCastle));
-										}
-										else
-										{
-											Piece rook = board.GetPiece(new Vector2(0, 7));
-											rook.Move(board.whitePieces[selectedPiece].position - (Vector2.UnitX * move.isCastle));
-										}
-									}
-									turn = PieceColor.black;
-								}
-								else
-								{
-									if (move.isCapture) board.whitePieces.Remove(board.GetPiece(gridPosition));
-									board.blackPieces[selectedPiece].Move(move.position);
-									turn = PieceColor.white;
-								}
-
-								break;
-							}
+							if (turn == PieceColor.white)
+								selectedPiece = board.whitePieces.IndexOf(pieceAtMouse);
+							else
+								selectedPiece = board.blackPieces.IndexOf(pieceAtMouse);
+							Debug.WriteLine(pieceAtMouse.type);
 						}
-						selectedPiece = -1;
-						tileHighlight.Clear();
+						else selectedPiece = -1;
+					}
+					else
+					{
+						Debug.WriteLine("Moving");
+
+						Debug.WriteLine(selectedPiece);
+						if (selectedPiece != -1)
+						{
+
+							foreach (Move move in tileHighlight)
+							{
+								if (move.position == gridPosition)
+								{
+
+									if (turn == PieceColor.white)
+									{
+										if (move.isCapture)
+										{
+											Piece removePiece = board.GetPiece(gridPosition, PieceColor.black);
+											board.blackPieces.Remove(removePiece);
+											if (removePiece.type == "King")
+											{
+												endScreenText = "You Win!";
+												state = GameState.end;
+												multiplayer.secondPlayer.Send("gg");
+												multiplayer.secondPlayer.Close();
+											}
+										}
+										board.whitePieces[selectedPiece].Move(move.position, multiplayer, this);
+										if (move.isCastle != 0)
+										{
+											if (move.isCastle == 1)
+											{
+												
+												Piece rook = board.GetPiece(new Vector2(7, 7), PieceColor.white);
+												rook.Move(board.whitePieces[selectedPiece].position - (Vector2.UnitX * move.isCastle), multiplayer, this);
+											}
+											else
+											{
+												Piece rook = board.GetPiece(new Vector2(0, 7), PieceColor.white);
+												rook.Move(board.whitePieces[selectedPiece].position - (Vector2.UnitX * move.isCastle), multiplayer, this);
+											}
+										}
+										turn = PieceColor.black;
+									}
+									else if(state == GameState.playing)
+									{
+										if (move.isCapture) board.whitePieces.Remove(board.GetPiece(gridPosition));
+										board.blackPieces[selectedPiece].Move(move.position, multiplayer, this);
+										if (move.isCastle != 0)
+										{
+											if (move.isCastle == 1)
+											{
+												Piece rook = board.GetPiece(new Vector2(7, 0));
+												rook.Move(board.blackPieces[selectedPiece].position - (Vector2.UnitX * move.isCastle), multiplayer, this);
+											}
+											else
+											{
+												Piece rook = board.GetPiece(new Vector2(0, 0));
+												rook.Move(board.blackPieces[selectedPiece].position - (Vector2.UnitX * move.isCastle), multiplayer, this);
+											}
+										}
+										turn = PieceColor.white;
+									}
+
+									break;
+								}
+							}
+							selectedPiece = -1;
+							tileHighlight.Clear();
+						}
 					}
 				}
 			}
-			// TODO: Add your update logic here
+			else if (state == GameState.menu)
+			{
+				if(multiplayer != null)
+				{
+					if(multiplayer.me != null)
+						multiplayer.me.Stop();
+					multiplayer = null;
+				}
+				if (Keyboard.GetState().IsKeyDown(Keys.Enter))
+				{
+					state = GameState.playing;
+					board = new Board(this, true);
+				}
+				else if (Keyboard.GetState().IsKeyDown(Keys.Back))
+				{
+					state = GameState.waitingForMatch;
+					
+					multiplayer = new MultiplayerManager(true, this, "");
+				}
+				else if (Keyboard.GetState().IsKeyDown(Keys.Tab))
+				{
+					state = GameState.waitingForMatch;
+					string ip = ShowDialog("Enter IP of host", "IP");
+					Debug.WriteLine($"'{ip}'");
+					if(ip == "") Exit();
+					else multiplayer = new MultiplayerManager(false, this, ip);
+				}
+			}
+			else if(state == GameState.end)
+			{
+				if (Keyboard.GetState().IsKeyDown(Keys.Enter))
+				{
+					state = GameState.menu;
+				}
+			}
 
 			base.Update(gameTime);
 		}
 
 		protected override void Draw(GameTime gameTime)
 		{
-			GraphicsDevice.Clear(Color.DarkBlue);
+			if (turn == PieceColor.black)
+				GraphicsDevice.Clear(Color.DarkBlue);
+			else if(turn == PieceColor.white)
+				GraphicsDevice.Clear(Color.LightGray);
 
-			// TODO: Add your drawing code here
-			board.Draw(this, gameTime, _spriteBatch, tileHighlight);
+			//Debug.WriteLine(state);
+			if (state == GameState.playing || state == GameState.playingMultiplayer)
+			{
+				// TODO: Add your drawing code here
+				board.Draw(this, gameTime, _spriteBatch, tileHighlight);
+			}
+			else if (state == GameState.menu)
+			{
+				_spriteBatch.Begin();
+
+				_spriteBatch.Draw(menuTexture, Vector2.Zero, Color.White);
+
+				_spriteBatch.End();
+			}
+			else if(state == GameState.end)
+			{
+				_spriteBatch.Begin();
+				_spriteBatch.DrawString(font, endScreenText, new Vector2(0, _graphics.PreferredBackBufferHeight / 2), Color.White);
+				_spriteBatch.End();
+			}
+			else if(state == GameState.waitingForMatch)
+			{
+				_spriteBatch.Begin();
+				_spriteBatch.DrawString(font, "Waiting for connection to begin. . .", new Vector2(0, _graphics.PreferredBackBufferHeight / 2), Color.White);
+				_spriteBatch.End();
+			}
 
 			base.Draw(gameTime);
 		}
