@@ -813,8 +813,11 @@ namespace chess
 											{
 												endScreenText = "You Win!";
 												state = GameState.end;
-												multiplayer.secondPlayer.Send("gg");
-												multiplayer.secondPlayer.Close();
+												if (multiplayer != null && multiplayer.secondPlayer.IsAlive)
+												{
+													multiplayer.secondPlayer.Send("gg");
+													multiplayer.secondPlayer.Close();
+												}
 											}
 										}
 										board.whitePieces[selectedPiece].Move(move.position, multiplayer, this);
@@ -836,7 +839,21 @@ namespace chess
 									}
 									else if(state == GameState.playing)
 									{
-										if (move.isCapture) board.whitePieces.Remove(board.GetPiece(gridPosition));
+										if (move.isCapture)
+										{
+											Piece removePiece = board.GetPiece(gridPosition, PieceColor.white);
+											board.whitePieces.Remove(removePiece);
+											if (removePiece.type == "King")
+											{
+												endScreenText = "You Lose!";
+												state = GameState.end;
+												if (multiplayer != null && multiplayer.secondPlayer.IsAlive)
+												{
+													multiplayer.secondPlayer.Send("gg");
+													multiplayer.secondPlayer.Close();
+												}
+											}
+										}
 										board.blackPieces[selectedPiece].Move(move.position, multiplayer, this);
 										if (move.isCastle != 0)
 										{
